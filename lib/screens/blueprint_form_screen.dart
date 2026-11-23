@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../models/blueprint_model.dart';
+import '../providers/blueprint_provider.dart';
 import '../services/blueprint_service.dart';
 
 class BlueprintFormScreen extends StatefulWidget {
@@ -77,11 +79,20 @@ class _BlueprintFormScreenState extends State<BlueprintFormScreen> {
       isVerified: _isVerified,
     );
 
+    final provider = Provider.of<BlueprintProvider?>(context, listen: false);
     bool success = false;
-    if (widget.isEdit) {
-      success = await _blueprintService.updateBlueprint(blueprintData);
+    if (provider != null) {
+      if (widget.isEdit) {
+        success = await provider.updateBlueprint(blueprintData);
+      } else {
+        success = await provider.createBlueprint(blueprintData);
+      }
     } else {
-      success = await _blueprintService.createBlueprint(blueprintData);
+      if (widget.isEdit) {
+        success = await _blueprintService.updateBlueprint(blueprintData);
+      } else {
+        success = await _blueprintService.createBlueprint(blueprintData);
+      }
     }
 
     if (!mounted) return;

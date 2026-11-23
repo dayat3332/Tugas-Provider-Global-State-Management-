@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'theme/app_theme.dart';
 import 'constants/app_assets.dart';
 import 'models/blueprint_model.dart';
+import 'providers/blueprint_provider.dart';
 import 'services/blueprint_service.dart';
 import 'screens/blueprint_form_screen.dart';
 
@@ -24,8 +26,8 @@ class IPDetailScreen extends StatefulWidget {
 }
 
 class _IPDetailScreenState extends State<IPDetailScreen> {
-  bool _isBookmarked = false;
-  bool _isAcquired = false;
+  bool _localBookmarked = false;
+  bool _localAcquired = false;
   late BlueprintModel? _blueprint;
 
   @override
@@ -34,16 +36,26 @@ class _IPDetailScreenState extends State<IPDetailScreen> {
     _blueprint = widget.blueprint;
   }
 
-  void _toggleBookmark() {
-    setState(() {
-      _isBookmarked = !_isBookmarked;
-    });
+  String get _currentTitle => _blueprint?.title ?? widget.title;
+
+  void _toggleBookmark(BlueprintProvider? provider) {
+    if (provider != null) {
+      provider.toggleBookmark(_currentTitle);
+    } else {
+      setState(() {
+        _localBookmarked = !_localBookmarked;
+      });
+    }
   }
 
-  void _toggleAcquireIP() {
-    setState(() {
-      _isAcquired = !_isAcquired;
-    });
+  void _toggleAcquireIP(BlueprintProvider? provider) {
+    if (provider != null) {
+      provider.toggleAcquireIP(_currentTitle);
+    } else {
+      setState(() {
+        _localAcquired = !_localAcquired;
+      });
+    }
   }
 
   Future<void> _editBlueprint() async {
@@ -82,7 +94,10 @@ class _IPDetailScreenState extends State<IPDetailScreen> {
     );
 
     if (confirm == true && mounted) {
-      final success = await BlueprintService().deleteBlueprint(_blueprint!.id);
+      final provider = Provider.of<BlueprintProvider?>(context, listen: false);
+      final success = provider != null
+          ? await provider.deleteBlueprint(_blueprint!.id)
+          : await BlueprintService().deleteBlueprint(_blueprint!.id);
       if (!mounted) return;
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -98,9 +113,14 @@ class _IPDetailScreenState extends State<IPDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final title = _blueprint?.title ?? widget.title;
+    final provider = Provider.of<BlueprintProvider?>(context);
+    final title = _currentTitle;
     final author = _blueprint?.author ?? widget.author;
     final price = _blueprint?.price ?? widget.price;
+    final isBookmarked =
+        provider != null ? provider.isBookmarked(title) : _localBookmarked;
+    final isAcquired =
+        provider != null ? provider.isAcquired(title) : _localAcquired;
     final description = (_blueprint != null && _blueprint!.description.isNotEmpty)
         ? _blueprint!.description
         : 'Enterprise Resource Planning terpadu dan arsitektur kode siap produksi yang telah melalui audit statis otomatis.';
@@ -143,13 +163,13 @@ class _IPDetailScreenState extends State<IPDetailScreen> {
             ),
           ],
           IconButton(
-            onPressed: _toggleBookmark,
+            onPressed: () => _toggleBookmark(provider),
             tooltip: 'Bookmark Blueprint',
             icon: Icon(
-              _isBookmarked
+              isBookmarked
                   ? Icons.bookmark_rounded
                   : Icons.bookmark_border_rounded,
-              color: _isBookmarked ? AppColors.orange : AppColors.textSecondary,
+              color: isBookmarked ? AppColors.orange : AppColors.textSecondary,
             ),
           ),
           const SizedBox(width: 8),
@@ -382,7 +402,7 @@ class _IPDetailScreenState extends State<IPDetailScreen> {
                   ),
                   const SizedBox(height: 22),
 
-                  // Tombol Aksi Stateful
+                  // Tombol Aksi Stateful (Provider Global State)
                   Row(
                     children: [
                       Expanded(
@@ -390,12 +410,12 @@ class _IPDetailScreenState extends State<IPDetailScreen> {
                         child: SizedBox(
                           height: 48,
                           child: ElevatedButton(
-                            onPressed: _toggleBookmark,
+                            onPressed: () => _toggleBookmark(provider),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: _isBookmarked
+                              backgroundColor: isBookmarked
                                   ? const Color(0xFFFEF3C7)
                                   : const Color(0xFFEFF6FF),
-                              foregroundColor: _isBookmarked
+                              foregroundColor: isBookmarked
                                   ? const Color(0xFFD97706)
                                   : AppColors.primary,
                               elevation: 0,
@@ -407,7 +427,7 @@ class _IPDetailScreenState extends State<IPDetailScreen> {
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(
-                                  _isBookmarked
+                                  isBookmarked
                                       ? Icons.bookmark_rounded
                                       : Icons.bookmark_border_rounded,
                                   size: 18,
@@ -415,7 +435,7 @@ class _IPDetailScreenState extends State<IPDetailScreen> {
                                 const SizedBox(width: 6),
                                 Flexible(
                                   child: Text(
-                                    _isBookmarked ? 'Saved' : 'Bookmark',
+                                    isBookmarked ? 'Saved' : 'Bookmark',
                                     style: const TextStyle(
                                       fontSize: 13.5,
                                       fontWeight: FontWeight.w700,
@@ -434,9 +454,9 @@ class _IPDetailScreenState extends State<IPDetailScreen> {
                         child: SizedBox(
                           height: 48,
                           child: ElevatedButton(
-                            onPressed: _toggleAcquireIP,
+                            onPressed: () => _toggleAcquireIP(provider),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: _isAcquired
+                              backgroundColor: isAcquired
                                   ? AppColors.green
                                   : AppColors.primary,
                               foregroundColor: Colors.white,
@@ -449,7 +469,7 @@ class _IPDetailScreenState extends State<IPDetailScreen> {
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(
-                                  _isAcquired
+                                  isAcquired
                                       ? Icons.check_circle_rounded
                                       : Icons.shopping_bag_outlined,
                                   size: 18,
@@ -457,7 +477,7 @@ class _IPDetailScreenState extends State<IPDetailScreen> {
                                 const SizedBox(width: 8),
                                 Flexible(
                                   child: Text(
-                                    _isAcquired ? 'IP Acquired' : 'Acquire IP',
+                                    isAcquired ? 'IP Acquired' : 'Acquire IP',
                                     style: const TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w700,

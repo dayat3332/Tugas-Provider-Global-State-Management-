@@ -5,8 +5,19 @@ import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import '../models/blueprint_model.dart';
 
-class BlueprintService {
-  // Timeout request 5 detik
+/// [1. ABSTRACTION]: Kontrak abstrak repository CRUD Blueprint
+abstract class BaseBlueprintRepository {
+  Future<List<BlueprintModel>> getBlueprints({String? search, String? stack});
+  Future<bool> createBlueprint(BlueprintModel blueprint);
+  Future<bool> updateBlueprint(BlueprintModel blueprint);
+  Future<bool> deleteBlueprint(int id);
+  Future<bool> isBackendConnected();
+}
+
+/// [3. INHERITANCE] & [4. POLYMORPHISM]:
+/// BlueprintService mewarisi BaseBlueprintRepository dan meng-override seluruh operasi CRUD
+class BlueprintService extends BaseBlueprintRepository {
+  // [2. ENCAPSULATION]: Konstanta timeout private
   static const Duration _timeoutDuration = Duration(seconds: 5);
 
   /// Default fallback blueprints jika database docker belum terhubung
@@ -33,7 +44,8 @@ class BlueprintService {
         ),
       ];
 
-  /// READ: Mengambil seluruh blueprint dari MySQL melalui Docker backend
+  /// READ (Asynchronous): Mengambil seluruh blueprint dari MySQL melalui Docker backend
+  @override
   Future<List<BlueprintModel>> getBlueprints({
     String? search,
     String? stack,
@@ -66,7 +78,8 @@ class BlueprintService {
     }
   }
 
-  /// CREATE: Menambahkan blueprint baru ke database
+  /// CREATE (Asynchronous): Menambahkan blueprint baru ke database
+  @override
   Future<bool> createBlueprint(BlueprintModel blueprint) async {
     try {
       final response = await http
@@ -88,7 +101,8 @@ class BlueprintService {
     }
   }
 
-  /// UPDATE: Memperbarui blueprint yang sudah ada di database
+  /// UPDATE (Asynchronous): Memperbarui blueprint yang sudah ada di database
+  @override
   Future<bool> updateBlueprint(BlueprintModel blueprint) async {
     try {
       final response = await http
@@ -110,7 +124,8 @@ class BlueprintService {
     }
   }
 
-  /// DELETE: Menghapus blueprint berdasarkan ID dari database
+  /// DELETE (Asynchronous): Menghapus blueprint berdasarkan ID dari database
+  @override
   Future<bool> deleteBlueprint(int id) async {
     try {
       final response = await http
@@ -132,7 +147,8 @@ class BlueprintService {
     }
   }
 
-  /// Memeriksa status konektivitas ke Docker backend
+  /// Memeriksa status konektivitas ke Docker backend secara Asynchronous
+  @override
   Future<bool> isBackendConnected() async {
     try {
       final uri = ApiConfig.readEndpoint;

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../theme/app_theme.dart';
 import '../../constants/app_assets.dart';
 import '../../models/blueprint_model.dart';
-import '../../services/blueprint_service.dart';
+import '../../providers/blueprint_provider.dart';
 import '../../config/api_config.dart';
 import '../../navigation/bottom_nav_bar.dart';
 import '../../widgets/app_top_bar.dart';
@@ -21,57 +22,46 @@ class SellScreen extends StatefulWidget {
 }
 
 class _SellScreenState extends State<SellScreen> {
-  final _blueprintService = BlueprintService();
-  List<BlueprintModel> _blueprints = [];
-  bool _isLoading = true;
-  bool _isBackendConnected = false;
-
   @override
   void initState() {
     super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    setState(() => _isLoading = true);
-    final isOnline = await _blueprintService.isBackendConnected();
-    final list = await _blueprintService.getBlueprints();
-    if (!mounted) return;
-    setState(() {
-      _isBackendConnected = isOnline;
-      _blueprints = list;
-      _isLoading = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final provider = Provider.of<BlueprintProvider?>(context, listen: false);
+      if (provider != null && provider.blueprints.isEmpty && !provider.isLoading) {
+        provider.loadBlueprints();
+      }
     });
   }
 
-  Future<void> _openCreateForm() async {
+  Future<void> _openCreateForm(BuildContext ctx) async {
     final result = await Navigator.push(
-      context,
+      ctx,
       MaterialPageRoute(
         builder: (_) => const BlueprintFormScreen(),
       ),
     );
-    if (result == true) {
-      _loadData();
+    if (result == true && ctx.mounted) {
+      ctx.read<BlueprintProvider>().loadBlueprints();
     }
   }
 
-  Future<void> _openEditForm(BlueprintModel blueprint) async {
+  Future<void> _openEditForm(BuildContext ctx, BlueprintModel blueprint) async {
     final result = await Navigator.push(
-      context,
+      ctx,
       MaterialPageRoute(
         builder: (_) => BlueprintFormScreen(blueprint: blueprint),
       ),
     );
-    if (result == true) {
-      _loadData();
+    if (result == true && ctx.mounted) {
+      ctx.read<BlueprintProvider>().loadBlueprints();
     }
   }
 
-  Future<void> _confirmDelete(BlueprintModel blueprint) async {
+  Future<void> _confirmDelete(BuildContext ctx, BlueprintModel blueprint) async {
     final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
+      context: ctx,
+      builder: (dialogCtx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
@@ -86,7 +76,7 @@ class _SellScreenState extends State<SellScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => Navigator.pop(dialogCtx, false),
             child: const Text('Batal', style: TextStyle(color: AppColors.textSecondary)),
           ),
           ElevatedButton(
@@ -95,26 +85,26 @@ class _SellScreenState extends State<SellScreen> {
               elevation: 0,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
-            onPressed: () => Navigator.pop(ctx, true),
+            onPressed: () => Navigator.pop(dialogCtx, true),
             child: const Text('Ya, Hapus', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
 
-    if (confirm == true) {
-      final success = await _blueprintService.deleteBlueprint(blueprint.id);
-      if (!mounted) return;
+    if (confirm == true && ctx.mounted) {
+      final success =
+          await ctx.read<BlueprintProvider>().deleteBlueprint(blueprint.id);
+      if (!ctx.mounted) return;
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(ctx).showSnackBar(
           SnackBar(
             content: Text('Blueprint "${blueprint.title}" berhasil dihapus'),
             backgroundColor: const Color(0xFF0D9488),
           ),
         );
-        _loadData();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(ctx).showSnackBar(
           const SnackBar(
             content: Text('Gagal menghapus blueprint dari Docker database'),
             backgroundColor: Color(0xFFE11D48),
@@ -124,10 +114,11 @@ class _SellScreenState extends State<SellScreen> {
     }
   }
 
-  void _showConfigureIpDialog() {
+  void _showConfigureIpDialog(BuildContext parentContext) {
+    final provider = parentContext.read<BlueprintProvider>();
     final controller = TextEditingController(text: ApiConfig.host);
     showDialog(
-      context: context,
+      context: parentContext,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Konfigurasi Host Docker API', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
@@ -152,17 +143,15 @@ class _SellScreenState extends State<SellScreen> {
         actions: [
           TextButton(
             onPressed: () {
-              ApiConfig.resetHost();
               Navigator.pop(ctx);
-              _loadData();
+              provider.resetApiHost();
             },
             child: const Text('Reset Default'),
           ),
           ElevatedButton(
             onPressed: () {
-              ApiConfig.setHost(controller.text.trim());
               Navigator.pop(ctx);
-              _loadData();
+              provider.updateApiHost(controller.text.trim());
             },
             child: const Text('Simpan'),
           ),
@@ -199,10 +188,27 @@ class _SellScreenState extends State<SellScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final hasGlobalProvider =
+        Provider.of<BlueprintProvider?>(context, listen: false) != null;
+    if (!hasGlobalProvider) {
+      return ChangeNotifierProvider<BlueprintProvider>(
+        create: (_) => BlueprintProvider()..loadBlueprints(),
+        child: Builder(
+          builder: (ctx) => _buildSellScaffold(ctx),
+        ),
+      );
+    }
+    return _buildSellScaffold(context);
+  }
+
+  Widget _buildSellScaffold(BuildContext context) {
+    final provider = context.watch<BlueprintProvider>();
+    final blueprints = provider.blueprints;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _openCreateForm,
+        onPressed: () => _openCreateForm(context),
         backgroundColor: AppColors.primary,
         icon: const Icon(Icons.add_rounded, color: Colors.white),
         label: const Text(
@@ -218,7 +224,7 @@ class _SellScreenState extends State<SellScreen> {
             ),
             Expanded(
               child: RefreshIndicator(
-                onRefresh: _loadData,
+                onRefresh: provider.loadBlueprints,
                 color: AppColors.primary,
                 child: SingleChildScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
@@ -229,30 +235,30 @@ class _SellScreenState extends State<SellScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildHeader(),
+                          _buildHeader(context),
                           const SizedBox(height: 16),
-                          _buildDockerStatusCard(),
+                          _buildDockerStatusCard(provider),
                           const SizedBox(height: 20),
-                          _buildSectionTitle(),
+                          _buildSectionTitle(blueprints.length),
                           const SizedBox(height: 12),
-                          if (_isLoading)
+                          if (provider.isLoading)
                             const Center(
                               child: Padding(
                                 padding: EdgeInsets.all(40),
                                 child: CircularProgressIndicator(),
                               ),
                             )
-                          else if (_blueprints.isEmpty)
-                            _buildEmptyState()
+                          else if (blueprints.isEmpty)
+                            _buildEmptyState(context)
                           else
                             ListView.separated(
                               shrinkWrap: true,
                               physics: const NeverScrollableScrollPhysics(),
-                              itemCount: _blueprints.length,
+                              itemCount: blueprints.length,
                               separatorBuilder: (_, __) => const SizedBox(height: 12),
-                              itemBuilder: (context, index) {
-                                final bp = _blueprints[index];
-                                return _buildBlueprintManageCard(bp);
+                              itemBuilder: (ctx, index) {
+                                final bp = blueprints[index];
+                                return _buildBlueprintManageCard(context, bp);
                               },
                             ),
                           const SizedBox(height: 80),
@@ -273,7 +279,7 @@ class _SellScreenState extends State<SellScreen> {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -305,7 +311,7 @@ class _SellScreenState extends State<SellScreen> {
             IconButton(
               icon: const Icon(Icons.settings_ethernet_rounded, color: AppColors.primary),
               tooltip: 'Konfigurasi IP Docker',
-              onPressed: _showConfigureIpDialog,
+              onPressed: () => _showConfigureIpDialog(context),
             ),
           ],
         ),
@@ -313,21 +319,22 @@ class _SellScreenState extends State<SellScreen> {
     );
   }
 
-  Widget _buildDockerStatusCard() {
+  Widget _buildDockerStatusCard(BlueprintProvider provider) {
+    final isConnected = provider.isBackendConnected;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: _isBackendConnected ? const Color(0xFFF0FDF4) : const Color(0xFFFFF1F2),
+        color: isConnected ? const Color(0xFFF0FDF4) : const Color(0xFFFFF1F2),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: _isBackendConnected ? const Color(0xFFBBF7D0) : const Color(0xFFFECDD3),
+          color: isConnected ? const Color(0xFFBBF7D0) : const Color(0xFFFECDD3),
         ),
       ),
       child: Row(
         children: [
           Icon(
-            _isBackendConnected ? Icons.check_circle_rounded : Icons.warning_amber_rounded,
-            color: _isBackendConnected ? const Color(0xFF16A34A) : const Color(0xFFE11D48),
+            isConnected ? Icons.check_circle_rounded : Icons.warning_amber_rounded,
+            color: isConnected ? const Color(0xFF16A34A) : const Color(0xFFE11D48),
             size: 24,
           ),
           const SizedBox(width: 10),
@@ -336,13 +343,13 @@ class _SellScreenState extends State<SellScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _isBackendConnected
+                  isConnected
                       ? 'Docker MySQL Backend Terhubung'
                       : 'Docker Backend Belum Terhubung',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: _isBackendConnected
+                    color: isConnected
                         ? const Color(0xFF15803D)
                         : const Color(0xFFBE123C),
                   ),
@@ -353,7 +360,7 @@ class _SellScreenState extends State<SellScreen> {
                   style: TextStyle(
                     fontSize: 11,
                     fontFamily: 'monospace',
-                    color: _isBackendConnected
+                    color: isConnected
                         ? const Color(0xFF166534)
                         : const Color(0xFF9F1239),
                   ),
@@ -363,7 +370,7 @@ class _SellScreenState extends State<SellScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.refresh_rounded, size: 20),
-            onPressed: _loadData,
+            onPressed: provider.loadBlueprints,
             tooltip: 'Cek ulang koneksi',
           ),
         ],
@@ -371,12 +378,12 @@ class _SellScreenState extends State<SellScreen> {
     );
   }
 
-  Widget _buildSectionTitle() {
+  Widget _buildSectionTitle(int count) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
-          'Daftar Blueprint (${_blueprints.length})',
+          'Daftar Blueprint ($count)',
           style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w700,
@@ -395,7 +402,7 @@ class _SellScreenState extends State<SellScreen> {
     );
   }
 
-  Widget _buildBlueprintManageCard(BlueprintModel bp) {
+  Widget _buildBlueprintManageCard(BuildContext context, BlueprintModel bp) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -512,14 +519,14 @@ class _SellScreenState extends State<SellScreen> {
               const SizedBox(width: 4),
               // Edit button
               TextButton.icon(
-                onPressed: () => _openEditForm(bp),
+                onPressed: () => _openEditForm(context, bp),
                 icon: const Icon(Icons.edit_outlined, size: 16, color: AppColors.primary),
                 label: const Text('Edit', style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w700)),
               ),
               const SizedBox(width: 4),
               // Delete button
               TextButton.icon(
-                onPressed: () => _confirmDelete(bp),
+                onPressed: () => _confirmDelete(context, bp),
                 icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFFE11D48)),
                 label: const Text('Hapus', style: TextStyle(fontSize: 12, color: Color(0xFFE11D48), fontWeight: FontWeight.w700)),
               ),
@@ -530,7 +537,7 @@ class _SellScreenState extends State<SellScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
@@ -559,7 +566,7 @@ class _SellScreenState extends State<SellScreen> {
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(
-              onPressed: _openCreateForm,
+              onPressed: () => _openCreateForm(context),
               icon: const Icon(Icons.add, size: 18),
               label: const Text('Tambah Blueprint'),
             ),

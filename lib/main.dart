@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'theme/app_theme.dart';
 import 'constants/app_assets.dart';
 import 'widgets/category_chips.dart';
@@ -14,8 +15,7 @@ import 'screens/seller/sell_screen.dart' show SellScreen;
 import 'screens/profile_screen.dart';
 import 'screens/buyer/filter_search_screen.dart';
 import 'screens/buyer/request_code_screen.dart';
-import 'models/blueprint_model.dart';
-import 'services/blueprint_service.dart';
+import 'providers/blueprint_provider.dart';
 import 'screens/blueprint_form_screen.dart';
 import 'config/api_config.dart';
 import 'ip_detail_screen.dart';
@@ -30,25 +30,32 @@ class CodeNecromancerApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'CodeNecromancer',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      initialRoute: initialRoute,
-      routes: {
-        '/': (context) => const SplashScreen(),
-        '/splash': (context) => const SplashScreen(),
-        '/login': (context) => const LoginScreen(),
-        '/register': (context) => const RegisterScreen(),
-        '/home': (context) => const MarketplaceDashboard(),
-        '/wishlist': (context) => const WishlistScreen(),
-        '/library': (context) => const LibraryScreen(),
-        '/orders': (context) => const OrdersScreen(),
-        '/sell': (context) => const SellScreen(),
-        '/profile': (context) => const ProfileScreen(),
-        '/filter': (context) => const FilterSearchScreen(),
-        '/request-code': (context) => const RequestCodeScreen(),
-      },
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<BlueprintProvider>(
+          create: (_) => BlueprintProvider()..loadBlueprints(),
+        ),
+      ],
+      child: MaterialApp(
+        title: 'CodeNecromancer',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.lightTheme,
+        initialRoute: initialRoute,
+        routes: {
+          '/': (context) => const SplashScreen(),
+          '/splash': (context) => const SplashScreen(),
+          '/login': (context) => const LoginScreen(),
+          '/register': (context) => const RegisterScreen(),
+          '/home': (context) => const MarketplaceDashboard(),
+          '/wishlist': (context) => const WishlistScreen(),
+          '/library': (context) => const LibraryScreen(),
+          '/orders': (context) => const OrdersScreen(),
+          '/sell': (context) => const SellScreen(),
+          '/profile': (context) => const ProfileScreen(),
+          '/filter': (context) => const FilterSearchScreen(),
+          '/request-code': (context) => const RequestCodeScreen(),
+        },
+      ),
     );
   }
 }
@@ -61,86 +68,24 @@ class MarketplaceDashboard extends StatefulWidget {
 }
 
 class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
-  int _selectedCategoryIndex = 0;
   final TextEditingController _searchController =
       TextEditingController(text: '');
-  String _selectedSort = 'Populer';
 
   final List<String> _popularTags = ['Laravel', 'Next.js', 'Flutter', 'FastAPI'];
-
-  final BlueprintService _blueprintService = BlueprintService();
-  List<BlueprintModel> _blueprints = [];
-  bool _isLoading = true;
-  bool _isBackendConnected = false;
 
   @override
   void initState() {
     super.initState();
-    _loadBlueprints();
-  }
-
-  Future<void> _loadBlueprints() async {
-    setState(() => _isLoading = true);
-    final isOnline = await _blueprintService.isBackendConnected();
-    final data = await _blueprintService.getBlueprints();
-    if (!mounted) return;
-    setState(() {
-      _isBackendConnected = isOnline;
-      _blueprints = data;
-      _isLoading = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final provider = Provider.of<BlueprintProvider?>(context, listen: false);
+      if (provider != null) {
+        _searchController.text = provider.searchQuery;
+        if (provider.blueprints.isEmpty && !provider.isLoading) {
+          provider.loadBlueprints();
+        }
+      }
     });
-  }
-
-  List<BlueprintModel> get _filteredBlueprints {
-    List<BlueprintModel> list = List.from(_blueprints);
-
-    // Filter kategori berdasarkan chip:
-    // 0: Semua, 1: Populer, 2: Frontend, 3: Backend, 4: Mobile, 5: AI/ML
-    if (_selectedCategoryIndex == 1) {
-      list = list.where((b) {
-        final l = b.stackLabel.toLowerCase();
-        return l.contains('laravel') ||
-            l.contains('next') ||
-            l.contains('flutter') ||
-            l.contains('fastapi');
-      }).toList();
-    } else if (_selectedCategoryIndex == 2) {
-      list = list.where((b) {
-        final l = b.stackLabel.toLowerCase();
-        return l.contains('next') || l.contains('react');
-      }).toList();
-    } else if (_selectedCategoryIndex == 3) {
-      list = list.where((b) {
-        final l = b.stackLabel.toLowerCase();
-        return l.contains('laravel') || l.contains('fastapi');
-      }).toList();
-    } else if (_selectedCategoryIndex == 4) {
-      list = list.where((b) => b.stackLabel.toLowerCase().contains('flutter')).toList();
-    } else if (_selectedCategoryIndex == 5) {
-      list = list.where((b) {
-        final l = b.stackLabel.toLowerCase();
-        return l.contains('ai') || l.contains('python');
-      }).toList();
-    }
-
-    // Filter teks pencarian
-    final query = _searchController.text.trim().toLowerCase();
-    if (query.isNotEmpty) {
-      list = list.where((b) {
-        return b.title.toLowerCase().contains(query) ||
-            b.author.toLowerCase().contains(query) ||
-            b.stackLabel.toLowerCase().contains(query) ||
-            b.description.toLowerCase().contains(query);
-      }).toList();
-    }
-
-    // Urutkan
-    if (_selectedSort == 'Terbaru') {
-      list.sort((a, b) =>
-          (b.createdAt ?? DateTime.now()).compareTo(a.createdAt ?? DateTime.now()));
-    }
-
-    return list;
   }
 
   @override
@@ -168,12 +113,10 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
     );
   }
 
-  void _resetFilter() {
-    setState(() {
-      _selectedCategoryIndex = 0;
-      _searchController.clear();
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
+  void _resetFilter(BuildContext ctx) {
+    _searchController.clear();
+    ctx.read<BlueprintProvider>().resetFilter();
+    ScaffoldMessenger.of(ctx).showSnackBar(
       const SnackBar(
         content: Text('Filter dan pencarian direset ke default'),
         duration: Duration(seconds: 2),
@@ -181,11 +124,10 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
     );
   }
 
-  void _selectTag(String tag) {
-    setState(() {
-      _searchController.text = tag;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
+  void _selectTag(BuildContext ctx, String tag) {
+    _searchController.text = tag;
+    ctx.read<BlueprintProvider>().setSearchQuery(tag);
+    ScaffoldMessenger.of(ctx).showSnackBar(
       SnackBar(
         content: Text('Mencari blueprint untuk $tag'),
         duration: const Duration(seconds: 1),
@@ -193,9 +135,10 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
     );
   }
 
-  void _showSortDialog() {
+  void _showSortDialog(BuildContext parentContext) {
+    final provider = parentContext.read<BlueprintProvider>();
     showModalBottomSheet(
-      context: context,
+      context: parentContext,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -219,11 +162,11 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
                   leading:
                       const Icon(Icons.trending_up, color: AppColors.primary),
                   title: const Text('Populer'),
-                  trailing: _selectedSort == 'Populer'
+                  trailing: provider.selectedSort == 'Populer'
                       ? const Icon(Icons.check, color: AppColors.primary)
                       : null,
                   onTap: () {
-                    setState(() => _selectedSort = 'Populer');
+                    provider.setSelectedSort('Populer');
                     Navigator.pop(context);
                   },
                 ),
@@ -231,11 +174,11 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
                   leading: const Icon(Icons.new_releases_outlined,
                       color: AppColors.primary),
                   title: const Text('Terbaru'),
-                  trailing: _selectedSort == 'Terbaru'
+                  trailing: provider.selectedSort == 'Terbaru'
                       ? const Icon(Icons.check, color: AppColors.primary)
                       : null,
                   onTap: () {
-                    setState(() => _selectedSort = 'Terbaru');
+                    provider.setSelectedSort('Terbaru');
                     Navigator.pop(context);
                   },
                 ),
@@ -243,11 +186,11 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
                   leading:
                       const Icon(Icons.star_outline, color: AppColors.primary),
                   title: const Text('Rating Tertinggi'),
-                  trailing: _selectedSort == 'Rating Tertinggi'
+                  trailing: provider.selectedSort == 'Rating Tertinggi'
                       ? const Icon(Icons.check, color: AppColors.primary)
                       : null,
                   onTap: () {
-                    setState(() => _selectedSort = 'Rating Tertinggi');
+                    provider.setSelectedSort('Rating Tertinggi');
                     Navigator.pop(context);
                   },
                 ),
@@ -261,6 +204,22 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    final hasGlobalProvider =
+        Provider.of<BlueprintProvider?>(context, listen: false) != null;
+    if (!hasGlobalProvider) {
+      return ChangeNotifierProvider<BlueprintProvider>(
+        create: (_) => BlueprintProvider()..loadBlueprints(),
+        child: Builder(
+          builder: (ctx) => _buildDashboardScaffold(ctx),
+        ),
+      );
+    }
+    return _buildDashboardScaffold(context);
+  }
+
+  Widget _buildDashboardScaffold(BuildContext context) {
+    final provider = context.watch<BlueprintProvider>();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
@@ -279,7 +238,7 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
             // Content Area with Pull-To-Refresh
             Expanded(
               child: RefreshIndicator(
-                onRefresh: _loadBlueprints,
+                onRefresh: provider.loadBlueprints,
                 color: AppColors.primary,
                 child: SingleChildScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
@@ -296,20 +255,20 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
                           const SizedBox(height: 14),
 
                           // Docker Backend Connection Status Card
-                          _buildDockerStatusBar(),
+                          _buildDockerStatusBar(context, provider),
                           const SizedBox(height: 16),
 
                           // Search Bar & Filter Button
-                          _buildSearchAndFilter(),
+                          _buildSearchAndFilter(context),
                           const SizedBox(height: 18),
 
                           // Horizontal Category Chips
                           CategoryChips(
-                            selectedIndex: _selectedCategoryIndex,
+                            selectedIndex: provider.selectedCategoryIndex,
                             onSelected: (index) {
-                              setState(() {
-                                _selectedCategoryIndex = index;
-                              });
+                              context
+                                  .read<BlueprintProvider>()
+                                  .setCategoryIndex(index);
                             },
                           ),
                           const SizedBox(height: 24),
@@ -330,7 +289,7 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
                                 ),
                               ),
                               GestureDetector(
-                                onTap: _showSortDialog,
+                                onTap: () => _showSortDialog(context),
                                 child: const Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -355,8 +314,8 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
                           ),
                           const SizedBox(height: 16),
 
-                          // Dynamic Blueprints List from Docker Database
-                          if (_isLoading)
+                          // Dynamic Blueprints List from Global Provider State
+                          if (provider.isLoading)
                             const Center(
                               child: Padding(
                                 padding: EdgeInsets.all(40),
@@ -364,7 +323,7 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
                               ),
                             )
                           else
-                            ..._filteredBlueprints.map((bp) {
+                            ...provider.filteredBlueprints.map((bp) {
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 14),
                                 child: _buildItemCard(
@@ -385,7 +344,11 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
                                         ),
                                       ),
                                     ).then((v) {
-                                      if (v == true) _loadBlueprints();
+                                      if (v == true && context.mounted) {
+                                        context
+                                            .read<BlueprintProvider>()
+                                            .loadBlueprints();
+                                      }
                                     });
                                   },
                                 ),
@@ -394,7 +357,7 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
                           const SizedBox(height: 18),
 
                           // Main Card: Empty Blueprint / Request Code Card
-                          _buildEmptyStateCard(),
+                          _buildEmptyStateCard(context),
                           const SizedBox(height: 80),
                         ],
                       ),
@@ -437,16 +400,20 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
     );
   }
 
-  Widget _buildDockerStatusBar() {
+  Widget _buildDockerStatusBar(
+    BuildContext context,
+    BlueprintProvider provider,
+  ) {
+    final isConnected = provider.isBackendConnected;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: _isBackendConnected
+        color: isConnected
             ? const Color(0xFFF0FDF4)
             : const Color(0xFFFFF7ED),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: _isBackendConnected
+          color: isConnected
               ? const Color(0xFFBBF7D0)
               : const Color(0xFFFED7AA),
         ),
@@ -460,7 +427,7 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
                 height: 10,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: _isBackendConnected
+                  color: isConnected
                       ? const Color(0xFF16A34A)
                       : const Color(0xFFEA580C),
                 ),
@@ -471,13 +438,13 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _isBackendConnected
-                          ? 'Docker MySQL API: Online (${_blueprints.length} Data)'
+                      isConnected
+                          ? 'Docker MySQL API: Online (${provider.blueprints.length} Data)'
                           : 'Docker MySQL API: Offline (Fallback)',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: _isBackendConnected
+                        color: isConnected
                             ? const Color(0xFF15803D)
                             : const Color(0xFFC2410C),
                       ),
@@ -487,7 +454,7 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
                       style: TextStyle(
                         fontSize: 10.5,
                         fontFamily: 'monospace',
-                        color: _isBackendConnected
+                        color: isConnected
                             ? const Color(0xFF166534)
                             : const Color(0xFF9A3412),
                       ),
@@ -500,7 +467,7 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
                 color: AppColors.textSecondary,
-                onPressed: _loadBlueprints,
+                onPressed: provider.loadBlueprints,
                 tooltip: 'Muat ulang data dari Docker',
               ),
             ],
@@ -519,7 +486,9 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
                           builder: (_) => const BlueprintFormScreen(),
                         ),
                       );
-                      if (res == true) _loadBlueprints();
+                      if (res == true && context.mounted) {
+                        context.read<BlueprintProvider>().loadBlueprints();
+                      }
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
@@ -546,7 +515,11 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const SellScreen()),
-                      ).then((_) => _loadBlueprints());
+                      ).then((_) {
+                        if (context.mounted) {
+                          context.read<BlueprintProvider>().loadBlueprints();
+                        }
+                      });
                     },
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: AppColors.primary),
@@ -565,7 +538,7 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
               ),
               const SizedBox(width: 8),
               InkWell(
-                onTap: _showConfigureHostDialog,
+                onTap: () => _showConfigureHostDialog(context),
                 borderRadius: BorderRadius.circular(8),
                 child: Container(
                   height: 34,
@@ -594,10 +567,11 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
     );
   }
 
-  void _showConfigureHostDialog() {
+  void _showConfigureHostDialog(BuildContext parentContext) {
+    final provider = parentContext.read<BlueprintProvider>();
     final controller = TextEditingController(text: ApiConfig.host);
     showDialog(
-      context: context,
+      context: parentContext,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Konfigurasi Host Docker API',
@@ -623,17 +597,15 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
         actions: [
           TextButton(
             onPressed: () {
-              ApiConfig.resetHost();
               Navigator.pop(ctx);
-              _loadBlueprints();
+              provider.resetApiHost();
             },
             child: const Text('Reset Default'),
           ),
           ElevatedButton(
             onPressed: () {
-              ApiConfig.setHost(controller.text.trim());
               Navigator.pop(ctx);
-              _loadBlueprints();
+              provider.updateApiHost(controller.text.trim());
             },
             child: const Text('Simpan'),
           ),
@@ -752,7 +724,7 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
     );
   }
 
-  Widget _buildSearchAndFilter() {
+  Widget _buildSearchAndFilter(BuildContext context) {
     return Row(
       children: [
         Expanded(
@@ -775,7 +747,8 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
                 Expanded(
                   child: TextField(
                     controller: _searchController,
-                    onChanged: (val) => setState(() {}),
+                    onChanged: (val) =>
+                        context.read<BlueprintProvider>().setSearchQuery(val),
                     style: const TextStyle(
                       fontSize: 14,
                       color: AppColors.textPrimary,
@@ -844,7 +817,7 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
     );
   }
 
-  Widget _buildEmptyStateCard() {
+  Widget _buildEmptyStateCard(BuildContext context) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
@@ -919,7 +892,7 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
             width: double.infinity,
             height: 48,
             child: ElevatedButton(
-              onPressed: _resetFilter,
+              onPressed: () => _resetFilter(context),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
@@ -1011,7 +984,7 @@ class _MarketplaceDashboardState extends State<MarketplaceDashboard> {
               if (tag == 'FastAPI') tagSvg = AppAssets.python;
 
               return GestureDetector(
-                onTap: () => _selectTag(tag),
+                onTap: () => _selectTag(context, tag),
                 child: Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 7),

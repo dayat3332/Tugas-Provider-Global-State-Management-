@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../constants/app_assets.dart';
+import '../services/local_storage_service.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/custom_text_field.dart';
 import '../widgets/social_login_buttons.dart';
@@ -15,9 +16,28 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  final LocalStorageService _localStorage = LocalStorageService();
   bool _rememberMe = true;
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedLoginSession();
+  }
+
+  Future<void> _loadSavedLoginSession() async {
+    final savedEmail = await _localStorage.getSavedEmail();
+    final remember = await _localStorage.getRememberMe();
+    if (!mounted) return;
+    if (savedEmail != null && savedEmail.isNotEmpty) {
+      setState(() {
+        _emailController.text = savedEmail;
+        _rememberMe = remember;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -26,7 +46,12 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _handleLogin() {
+  Future<void> _handleLogin() async {
+    await _localStorage.saveLoginSession(
+      email: _emailController.text.trim(),
+      rememberMe: _rememberMe,
+    );
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const HomeScreen()),
     );
